@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import pool from './db'
 
 const app = express();
 const PORT = 3000;
@@ -28,6 +29,9 @@ app.get("/api/products", (req, res) => {
     ]);
 });
 
+pool.query('SELECT NOW()')
+    .then(r => console.log('DB connected:', r.rows[0].now))
+    .catch(err => console.error('DB connection failed:', err));
 app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
 });
