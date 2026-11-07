@@ -158,6 +158,91 @@ app.get("/api/retailer-products", async (req, res) => {
         });
     }
 });
+
+//Verifying that the data is true
+app.patch("/api/retailer-products/:id/verify", async (req, res) => {
+    const id = Number(req.params.id);
+    const { product_url, match_method, confirmed } = req.body;
+
+    if (!Number.isInteger(id) || id < 1) {
+        return res.status(400).json({
+            error: "Invalid retailer product ID"
+        });
+    }
+
+    if (confirmed !== true) {
+        return res.status(400).json({
+            error: "You must confirm that you reviewed this listing"
+        });
+    }
+
+    if (!product_url || !["barcode", "name_brand_size", "manual"].includes(match_method)) {
+        return res.status(400).json({
+            error: "A product URL and valid match method are required"
+        });
+    }
+
+    try {
+        const submittedUrl = new URL(product_url);
+
+        if (submittedUrl.protocol !== "https:") {
+            return res.status(400).json({
+                error: "Product URL must use HTTPS"
+            });
+        }
+
+        // Retrieve the retailer's official website
+        const listing = await pool.query(
+            `SELECT rp.id, r.website
+             FROM retailer_products rp
+             JOIN retailers r ON rp.retailer_id = r.id
+             WHERE rp.id = $1`,
+            [id]
+        );
+
+        if (listing.rows.length === 0) {
+            return res.status(404).json({
+                error: "Retailer product listing not found"
+            });
+        }
+
+        const officialHost = new URL(listing.rows[0].website).hostname;
+        const submittedHost = submittedUrl.hostname;
+
+        if (
+            submittedHost !== officialHost &&
+            !submittedHost.endsWith("." + officialHost)
+        ) {
+            return res.status(400).json({
+                error: "URL domain does not match the retailer's official website"
+            });
+        }
+
+        const result = await pool.query(
+            `UPDATE retailer_products
+             SET product_url = $1,
+                 match_method = $2,
+                 is_verified = TRUE,
+                 matched_at = CURRENT_TIMESTAMP
+             WHERE id = $3
+             RETURNING *`,
+            [product_url, match_method, id]
+        );
+
+        res.json({
+            message: "Retailer listing verified successfully",
+            retailerProduct: result.rows[0]
+        });
+
+    } catch (error) {
+        console.error("Verification error:", error);
+
+        res.status(400).json({
+            error: "Could not verify listing. Check the URL and retailer website."
+        });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
 });
